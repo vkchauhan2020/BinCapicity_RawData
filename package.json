@@ -1,0 +1,18 @@
+{
+  "name": "bincapicity-rawdata",
+  "version": "1.0.0",
+  "description": "Mobile web app for barcode scanning, AR box dimension measurement, and CSV export",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "html5-qrcode": "^2.3.8"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}
