@@ -2,6 +2,14 @@
 
 A mobile web app for capturing box capacity data: scan a product barcode, measure box dimensions, enter weight/quantity, and export everything as a CSV.
 
+## Live Demo
+
+**[https://vkchauhan2020.github.io/BinCapicity_RawData/](https://vkchauhan2020.github.io/BinCapicity_RawData/)**
+
+Open this link directly on your Android or iOS phone to test the app — it's served over HTTPS, which is required for camera access. Deployment is automated via `.github/workflows/deploy-pages.yml` on every push to `main`.
+
+> **One-time setup required:** if the link above 404s, go to the repo's **Settings → Pages** and set the source to **GitHub Actions** — the workflow will then publish automatically.
+
 ## Stack
 
 - Vanilla JavaScript + [Vite](https://vitejs.dev/) (no backend, fully static, client-side only)
