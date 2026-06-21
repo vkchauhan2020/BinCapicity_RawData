@@ -85,7 +85,7 @@ export async function startArMeasurement({ onMeasured, onCancel, onUnsupported, 
 
     localSpace = await session.requestReferenceSpace('local');
     const viewerSpace = await session.requestReferenceSpace('viewer');
-    hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+    hitTestSource = await session.requestHitTestSource({ space: viewerSpace, entityTypes: ['plane', 'point'] });
 
     if (onStepChange) onStepChange(0);
 
