@@ -39,11 +39,11 @@ export async function startArMeasurement({ onMeasured, onCancel, onUnsupported, 
     session = null;
   }
 
-  function finishMeasurement() {
-    const lengthCm = distanceCm(capturedPoints[0], capturedPoints[1]);
-    const widthCm = distanceCm(capturedPoints[0], capturedPoints[2]);
+  async function finishMeasurement() {
+    const widthCm = distanceCm(capturedPoints[0], capturedPoints[1]);
+    const lengthCm = distanceCm(capturedPoints[0], capturedPoints[2]);
     const heightCm = distanceCm(capturedPoints[0], capturedPoints[3]);
-    session.end();
+    await session.end();
     onMeasured(
       Math.round(lengthCm * 10) / 10,
       Math.round(widthCm * 10) / 10,
@@ -51,11 +51,11 @@ export async function startArMeasurement({ onMeasured, onCancel, onUnsupported, 
     );
   }
 
-  function confirmPoint() {
+  async function confirmPoint() {
     if (!lastHitPosition) return;
     capturedPoints.push({ ...lastHitPosition });
     if (capturedPoints.length >= 4) {
-      finishMeasurement();
+      await finishMeasurement();
     } else if (onStepChange) {
       onStepChange(capturedPoints.length);
     }
@@ -120,8 +120,8 @@ export async function startArMeasurement({ onMeasured, onCancel, onUnsupported, 
 
     return {
       confirmPoint,
-      cancel: () => {
-        session.end();
+      cancel: async () => {
+        await session.end();
         onCancel();
       },
     };
