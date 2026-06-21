@@ -1,4 +1,4 @@
-import { isArSupported, startArMeasurement } from './dimensions-ar.js';
+import { isArSupported, startArMeasurement, TAP_PROMPTS } from './dimensions-ar.js';
 import { renderManualDimensionsForm } from './dimensions-manual.js';
 
 export async function startDimensionCapture(container, { onComplete }) {
@@ -29,18 +29,27 @@ export async function startDimensionCapture(container, { onComplete }) {
     renderManualDimensionsForm(container, { onSubmit: onComplete });
   });
 
-  arBtn.addEventListener('click', () => {
+  arBtn.addEventListener('click', async () => {
     container.innerHTML = '';
 
     const overlay = document.createElement('div');
     overlay.className = 'ar-overlay';
     overlay.innerHTML = `
-      <p class="ar-prompt-text"></p>
-      <button type="button" class="ar-cancel-btn secondary-btn">Cancel</button>
+      <div class="ar-crosshair"></div>
+      <div class="ar-panel">
+        <p class="ar-prompt-text"></p>
+        <button type="button" class="ar-confirm-btn primary-btn" disabled>Confirm Point</button>
+        <button type="button" class="ar-cancel-btn secondary-btn">Cancel</button>
+      </div>
     `;
     container.appendChild(overlay);
 
-    startArMeasurement({
+    const crosshair = overlay.querySelector('.ar-crosshair');
+    const promptText = overlay.querySelector('.ar-prompt-text');
+    const confirmBtn = overlay.querySelector('.ar-confirm-btn');
+    const cancelBtn = overlay.querySelector('.ar-cancel-btn');
+
+    const controller = await startArMeasurement({
       overlayElement: overlay,
       onMeasured: (l, w, h) => {
         onComplete({ l, w, h });
@@ -51,6 +60,18 @@ export async function startDimensionCapture(container, { onComplete }) {
       onUnsupported: () => {
         renderManualDimensionsForm(container, { onSubmit: onComplete });
       },
+      onStepChange: (stepIndex) => {
+        promptText.textContent = TAP_PROMPTS[stepIndex] || '';
+      },
+      onFrameUpdate: ({ hasValidHit }) => {
+        crosshair.classList.toggle('hit', hasValidHit);
+        confirmBtn.disabled = !hasValidHit;
+      },
     });
+
+    if (!controller) return;
+
+    confirmBtn.addEventListener('click', () => controller.confirmPoint());
+    cancelBtn.addEventListener('click', () => controller.cancel());
   });
 }

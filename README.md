@@ -40,7 +40,7 @@ npm test         # run unit tests (node --test)
 ## App Flow
 
 1. **Scan** — tap "Start Scanning", point the rear camera at the barcode.
-2. **Measure** — on supported Android devices, choose "Measure with AR" and tap 4 box corners (front-left base → front-right base → back-left base → top-front-left) to compute L/W/H in cm. Otherwise, enter dimensions manually.
+2. **Measure** — on supported Android devices, choose "Measure with AR". Align the on-screen crosshair on each of the 4 box corners in turn (front-left base → front-right base → back-left base → top-front-left), tapping "Confirm Point" once the crosshair turns green (indicating a valid surface hit) to compute L/W/H in cm. Otherwise, enter dimensions manually.
 3. **Weight & Qty** — enter approximate weight (kg) and units per box.
 4. Repeat for more boxes, or go to the list to review/delete entries and **Export CSV**.
 
@@ -53,6 +53,7 @@ The following cannot be verified in an automated/sandboxed environment and must 
 - [ ] Camera permission prompt appears on "Start Scanning" tap (Android Chrome & iOS Safari); denial shows a clear error + retry.
 - [ ] Real barcodes (EAN-13, UPC-A, Code128, QR) decode accurately from the rear camera at typical handling distances.
 - [ ] On an ARCore-capable Android device, `navigator.xr.isSessionSupported('immersive-ar')` returns true and the AR session launches.
-- [ ] AR hit-test reticle tracks a real surface; the 4-tap sequence yields L/W/H within reasonable tolerance of a tape measure.
+- [ ] AR crosshair turns green only when pointed at a real detected surface, the "Confirm Point" button is disabled otherwise, and the 4-point sequence yields L/W/H within reasonable tolerance of a tape measure.
+- [ ] Known AR limitation: WebXR hit-test needs ARCore to have tracked either a feature point or a detected plane at the aimed location, for any of the 4 corners. Slowly panning the camera across the box and surrounding area for a few seconds before each tap improves detection. The height corner (point 4, in mid-air above the base) is the hardest to register — resting something flat there, or waiting for ARCore to detect the box's top as a plane, can help if the crosshair won't turn green.
 - [ ] On iOS Safari, AR is correctly detected as unsupported (no crash) and the manual entry form appears immediately.
 - [ ] CSV downloads correctly and opens with the right content on both Android Chrome and iOS Safari.
