@@ -5,54 +5,37 @@ export function distanceCm(p1, p2) {
   return Math.sqrt(dx * dx + dy * dy + dz * dz) * 100;
 }
 
-const TAP_PROMPTS = [
-  'Tap the front-left base corner of the box',
-  'Tap the front-right base corner',
-  'Tap the back-left base corner',
-  'Tap the top-front-left corner (directly above point 1)',
+const STABILIZE_FRAMES = 18;
+const STABILIZE_TOLERANCE_M = 0.015;
+
+function averagePosition(buffer) {
+  const sum = buffer.reduce(
+    (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y, z: acc.z + p.z }),
+    { x: 0, y: 0, z: 0 }
+  );
+  return { x: sum.x / buffer.length, y: sum.y / buffer.length, z: sum.z / buffer.length };
+}
+
+function maxSpread(buffer) {
+  let max = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    for (let j = i + 1; j < buffer.length; j++) {
+      const dx = buffer[i].x - buffer[j].x;
+      const dy = buffer[i].y - buffer[j].y;
+      const dz = buffer[i].z - buffer[j].z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d > max) max = d;
+    }
+  }
+  return max;
+}
+
+export const TAP_PROMPTS = [
+  'Align the crosshair on the FRONT-LEFT base corner, then confirm',
+  'Align the crosshair on the FRONT-RIGHT base corner, then confirm',
+  'Align the crosshair on the BACK-LEFT base corner, then confirm',
+  'Align the crosshair on the TOP-FRONT-LEFT corner (directly above point 1), then confirm',
 ];
-
-function createReticleGeometry(gl) {
-  const segments = 24;
-  const radius = 0.05;
-  const vertices = [];
-  for (let i = 0; i <= segments; i++) {
-    const angle = (i / segments) * Math.PI * 2;
-    vertices.push(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
-  }
-  const buffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
-  return { buffer, count: segments + 1 };
-}
-
-function createShaderProgram(gl) {
-  const vertexSrc = `
-    attribute vec3 position;
-    uniform mat4 modelViewMatrix;
-    uniform mat4 projectionMatrix;
-    void main() {
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `;
-  const fragmentSrc = `
-    precision mediump float;
-    void main() {
-      gl_FragColor = vec4(0.1, 0.9, 0.3, 0.9);
-    }
-  `;
-  function compile(type, src) {
-    const shader = gl.createShader(type);
-    gl.shaderSource(shader, src);
-    gl.compileShader(shader);
-    return shader;
-  }
-  const program = gl.createProgram();
-  gl.attachShader(program, compile(gl.VERTEX_SHADER, vertexSrc));
-  gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragmentSrc));
-  gl.linkProgram(program);
-  return program;
-}
 
 export async function isArSupported() {
   if (!navigator.xr) return false;
@@ -63,7 +46,7 @@ export async function isArSupported() {
   }
 }
 
-export async function startArMeasurement({ onMeasured, onCancel, onUnsupported, overlayElement }) {
+export async function startArMeasurement({ onMeasured, onCancel, onUnsupported, onFrameUpdate, onStepChange, overlayElement }) {
   if (!navigator.xr) {
     onUnsupported();
     return;
@@ -72,30 +55,22 @@ export async function startArMeasurement({ onMeasured, onCancel, onUnsupported, 
   const capturedPoints = [];
   let session = null;
   let gl = null;
-  let reticle = null;
-  let shaderProgram = null;
-  let hitTestSource = null;
+  let planeHitTestSource = null;
+  let pointHitTestSource = null;
   let localSpace = null;
-
-  function updatePrompt() {
-    if (overlayElement) {
-      const stepText = TAP_PROMPTS[capturedPoints.length] || '';
-      overlayElement.querySelector('.ar-prompt-text').textContent = stepText;
-    }
-  }
+  let stablePosition = null;
+  let stabilizeBuffer = [];
 
   function cleanup() {
-    if (gl) {
-      gl = null;
-    }
+    gl = null;
     session = null;
   }
 
-  function finishMeasurement() {
-    const lengthCm = distanceCm(capturedPoints[0], capturedPoints[1]);
-    const widthCm = distanceCm(capturedPoints[0], capturedPoints[2]);
+  async function finishMeasurement() {
+    const widthCm = distanceCm(capturedPoints[0], capturedPoints[1]);
+    const lengthCm = distanceCm(capturedPoints[0], capturedPoints[2]);
     const heightCm = distanceCm(capturedPoints[0], capturedPoints[3]);
-    session.end();
+    await session.end();
     onMeasured(
       Math.round(lengthCm * 10) / 10,
       Math.round(widthCm * 10) / 10,
@@ -103,13 +78,13 @@ export async function startArMeasurement({ onMeasured, onCancel, onUnsupported, 
     );
   }
 
-  function onSelect() {
-    if (!reticle || !reticle.visible) return;
-    capturedPoints.push({ ...reticle.position });
+  async function confirmPoint() {
+    if (!stablePosition) return;
+    capturedPoints.push({ ...stablePosition });
     if (capturedPoints.length >= 4) {
-      finishMeasurement();
-    } else {
-      updatePrompt();
+      await finishMeasurement();
+    } else if (onStepChange) {
+      onStepChange(capturedPoints.length);
     }
   }
 
@@ -131,58 +106,66 @@ export async function startArMeasurement({ onMeasured, onCancel, onUnsupported, 
 
     session = await navigator.xr.requestSession('immersive-ar', sessionInit);
     session.addEventListener('end', onSessionEnded);
-    session.addEventListener('select', onSelect);
 
     await gl.makeXRCompatible();
     session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
 
     localSpace = await session.requestReferenceSpace('local');
     const viewerSpace = await session.requestReferenceSpace('viewer');
-    hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+    planeHitTestSource = await session.requestHitTestSource({ space: viewerSpace, entityTypes: ['plane'] });
+    pointHitTestSource = await session.requestHitTestSource({ space: viewerSpace, entityTypes: ['point'] });
 
-    shaderProgram = createShaderProgram(gl);
-    const geometry = createReticleGeometry(gl);
-    reticle = { visible: false, position: { x: 0, y: 0, z: 0 } };
-
-    updatePrompt();
+    if (onStepChange) onStepChange(0);
 
     const onXRFrame = (time, frame) => {
       session.requestAnimationFrame(onXRFrame);
-      const results = frame.getHitTestResults(hitTestSource);
+
+      const planeResults = frame.getHitTestResults(planeHitTestSource);
+      const pointResults = frame.getHitTestResults(pointHitTestSource);
+      const results = planeResults.length > 0 ? planeResults : pointResults;
+
+      let rawHit = null;
       if (results.length > 0) {
         const pose = results[0].getPose(localSpace);
         if (pose) {
-          reticle.visible = true;
-          reticle.position = {
+          rawHit = {
             x: pose.transform.position.x,
             y: pose.transform.position.y,
             z: pose.transform.position.z,
           };
         }
-      } else {
-        reticle.visible = false;
       }
+
+      if (rawHit) {
+        stabilizeBuffer.push(rawHit);
+        if (stabilizeBuffer.length > STABILIZE_FRAMES) stabilizeBuffer.shift();
+      } else {
+        stabilizeBuffer = [];
+      }
+
+      const isStable =
+        stabilizeBuffer.length >= STABILIZE_FRAMES && maxSpread(stabilizeBuffer) <= STABILIZE_TOLERANCE_M;
+      stablePosition = isStable ? averagePosition(stabilizeBuffer) : null;
 
       const glLayer = session.renderState.baseLayer;
       gl.bindFramebuffer(gl.FRAMEBUFFER, glLayer.framebuffer);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      gl.useProgram(shaderProgram);
-      gl.bindBuffer(gl.ARRAY_BUFFER, geometry.buffer);
+
+      if (onFrameUpdate) onFrameUpdate({ hasValidHit: isStable });
     };
 
     session.requestAnimationFrame(onXRFrame);
 
-    if (overlayElement) {
-      const cancelBtn = overlayElement.querySelector('.ar-cancel-btn');
-      if (cancelBtn) {
-        cancelBtn.onclick = () => {
-          session.end();
-          onCancel();
-        };
-      }
-    }
+    return {
+      confirmPoint,
+      cancel: async () => {
+        await session.end();
+        onCancel();
+      },
+    };
   } catch (error) {
     cleanup();
     onUnsupported(error);
+    return null;
   }
 }
